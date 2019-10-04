@@ -3,14 +3,14 @@
 /* Versioning */
 const VERSION_MAJOR = 0;
 const VERSION_MINOR = 2;
-const VERSION_PATCH = 0;
+const VERSION_PATCH = 1;
 
 /* Main  */
 const QBCache = {
 	VERSION: [ VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH ].join('.'),
 	_cache: {},
 	_waitFor: (key) => {
-		return new Promise((resolve, reject) => {
+		return new QuickBase.Promise((resolve, reject) => {
 			var nS = setInterval(() => {
 				if(QBCache._cache[key] !== false){
 					clearInterval(nS);
