@@ -2,66 +2,97 @@
 
 /* Versioning */
 const VERSION_MAJOR = 0;
-const VERSION_MINOR = 1;
+const VERSION_MINOR = 2;
 const VERSION_PATCH = 0;
 
 /* Main  */
 const QBCache = {
 	VERSION: [ VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH ].join('.'),
 	_cache: {},
-	_noop: function(){},
 	_waitFor: (key) => {
 		return new Promise((resolve, reject) => {
 			var nS = setInterval(() => {
-				if(typeof(QBCache._cache[key]) === 'function'){
-					return;
-				}else
-				if(QBCache._cache[key] instanceof Error){
-					return reject(QBCache._cache[key]);
+				if(QBCache._cache[key] !== false){
+					clearInterval(nS);
+					nS = undefined;
+
+					if(QBCache._cache[key] instanceof Error){
+						reject(QBCache._cache[key]);
+					}else{
+						resolve(QBCache._cache[key].results);
+					}
 				}
-
-				clearInterval(nS);
-				nS = undefined;
-
-				resolve(QBCache._cache[key].results);
 			}, 100);
 		});
 	},
 	expiresAfter: 60 * 1000,
-	hookInto: function(qb){
+	cacheableCalls: [
+		'API_DoQuery',
+		'API_DoQueryCount',
+		'API_FindDBByName',
+		'API_GenAddRecordForm',
+		'API_GenResultsTable',
+		'API_GetAncestorInfo',
+		'API_GetAppDTMInfo',
+		'API_GetDBInfo',
+		'API_GetDBPage',
+		'API_GetDBVar',
+		'API_GetFieldProperties',
+		'API_GetGroupRole',
+		'API_GetNumRecords',
+		'API_GetRecordAsHTML',
+		'API_GetRecordInfo',
+		'API_GetRoleInfo',
+		'API_GetSchema',
+		'API_GetUserInfo',
+		'API_GetUserRole',
+		'API_GetUsersInGroup',
+		'API_GrantedDBs',
+		'API_GrantedDBsForGroup',
+		'API_GrantedGroups',
+		'API_UserRoles'
+	],
+	hookInto: (qb) => {
 		if(!qb.apiIsCached){
 			const oldApi = qb.api;
 
 			qb.apiIsCached = true;
-			qb.api = (function(action, options){
+			qb.api = (function(action, options, skipCache){
+				const cacheCall = QBCache.cacheableCalls.indexOf(action) !== -1;
 				const key = [
 					qb.settings.realm,
 					action,
 					JSON.stringify(options || {})
 				].join('-');
 
-				if(!!QBCache._cache[key] && ((QBCache._cache[key] instanceof Error) || (QBCache._cache[key].expires <= Date.now()))){
-					delete QBCache._cache[key];
-				}
+				if(cacheCall && !skipCache){
+					if(!!QBCache._cache[key] && ((QBCache._cache[key] instanceof Error) || (QBCache._cache[key].expires <= Date.now()))){
+						delete QBCache._cache[key];
+					}
 
-				if(typeof(QBCache._cache[key]) === 'function'){
-					return QBCache._waitFor(key);
-				}else
-				if(QBCache._cache[key]){
-					return QuickBase.Promise.resolve(QBCache._cache[key].results);
-				}
+					if(QBCache._cache[key] === false){
+						return QBCache._waitFor(key);
+					}else
+					if(QBCache._cache[key]){
+						return QuickBase.Promise.resolve(QBCache._cache[key].results);
+					}
 
-				QBCache._cache[key] = QBCache._noop;
+					QBCache._cache[key] = false;
+				}
 
 				return oldApi.call(this, action, options).then((results) => {
-					QBCache._cache[key] = {
-						expires: Date.now() + QBCache.expiresAfter,
-						results: results
-					};
+					if(cacheCall){
+						QBCache._cache[key] = {
+							expires: Date.now() + QBCache.expiresAfter,
+							results: results
+						};
+					}
 
 					return results;
 				}).catch((err) => {
-					QBCache._cache[key] = err;
+					if(cacheCall){
+						QBCache._cache[key] = err;
+					}
 
 					throw err;
 				});
